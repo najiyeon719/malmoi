@@ -39,7 +39,14 @@ VECDB_API int malmoi_similar_words(const MalmoiSearch *search, const char *utf8_
  * Unknown words/zero-only groups return explicit errors, never a fake 0. */
 VECDB_API int malmoi_word_similarity(const MalmoiSearch *search, const char *utf8_a,
                                    const char *utf8_b, float *score);
-/* Native definition character n-gram search; independent of model vectors. */
+/* Meaning-based variants: skip reference senses (dialect, archaic, North Korean
+ * forms, work titles) when a word has other senses, and skip sense pairs whose
+ * definitions are identical. Falls back to the plain score when nothing is left. */
+VECDB_API int malmoi_word_similarity_meaning(const MalmoiSearch *search, const char *utf8_a,
+                                           const char *utf8_b, float *score);
+VECDB_API int malmoi_similar_words_meaning(const MalmoiSearch *search, const char *utf8_word,
+                                         MalmoiResult *out, size_t k, size_t *count);
+                                   /* Native definition character n-gram search; independent of model vectors. */
 int malmoi_search_definitions(const MalmoiSearch *search,const char *text,
                                MalmoiResult *out,size_t k,size_t *count);
 #ifdef __cplusplus

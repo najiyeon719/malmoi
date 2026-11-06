@@ -8,8 +8,11 @@ typedef struct {
     VecDBWord word;
     const float *vector;
     double inv_norm;
+    const char *definition; /* 이 뜻의 뜻풀이 (없으면 NULL) */
+    int reference;          /* 1이면 참조형 또는 작품명 뜻 */
 } Entry;
-typedef struct { size_t start, count; } Group;
+/* meaning_count: 벡터가 있고 참조형이 아닌 뜻의 수 */
+typedef struct { size_t start, count, meaning_count; } Group;
 struct MalmoiSearch {
     const VecDB *db;
     size_t n, ng, dimension;
@@ -48,6 +51,63 @@ static int entry_order(const void *a, const void *b) {
     int c=strcmp(x->word.key,y->word.key);
     return c ? c : (x->word.id>y->word.id)-(x->word.id<y->word.id);
 }
+
+/* ---------- 뜻 기준 유사도: 참조형 뜻과 똑같은 뜻풀이를 빼고 비교 ---------- */
+
+/* 다른 단어를 가리키기만 하는 뜻(방언, 옛말, 북한어)과 작품 제목 뜻을 찾는 문구 */
+static const char *const REFERENCE_PATTERNS[] = {
+    "’의 방언", "’의 옛말", "’의 북한어",
+    "작곡의 ", "감독이 만든", "지은 시", "지은 소설",
+    NULL
+};
+
+/* 참조형 뜻인가? 뜻풀이에 위 문구가 있거나, 단어가 '-'로 시작하거나 끝나는
+ * 접사(예: 비-, -껏)면 참조형으로 봐요. */
+static int is_reference(const char *word, const char *definition) {
+    size_t i, n;
+    if (word) {
+        n = strlen(word);
+        if (n && (word[0] == '-' || word[n - 1] == '-')) return 1;
+    }
+    if (!definition) return 0;
+    for (i = 0; REFERENCE_PATTERNS[i]; ++i) {
+        if (strstr(definition, REFERENCE_PATTERNS[i])) return 1;
+    }
+    return 0;
+}
+
+/* 뜻마다 뜻풀이를 연결하고, 단어(group)마다 의미 뜻의 수를 셉니다. */
+static int attach_definitions(MalmoiSearch *s) {
+    size_t *where;
+    size_t i, g;
+    if (!s->n) return VECDB_OK;
+    where = (size_t *)malloc(s->n * sizeof(size_t));
+    if (!where) return VECDB_MEMORY;
+    for (i = 0; i < s->n; ++i) where[i] = SIZE_MAX;
+    for (i = 0; i < s->n; ++i) {
+        if (s->entries[i].word.id < s->n) where[s->entries[i].word.id] = i;
+    }
+    for (i = 0; i < s->document_count; ++i) {
+        VecDBSense sense;
+        Entry *e;
+        if (vecdb_sense(s->db, (uint32_t)i, &sense) != VECDB_OK) continue;
+        if (sense.word_id >= s->n || where[sense.word_id] == SIZE_MAX) continue;
+        e = &s->entries[where[sense.word_id]];
+        if (e->definition) continue;
+        e->definition = sense.definition;
+        e->reference = is_reference(e->word.word, sense.definition);
+    }
+    free(where);
+    for (g = 0; g < s->ng; ++g) {
+        Group *group = &s->groups[g];
+        group->meaning_count = 0;
+        for (i = group->start; i < group->start + group->count; ++i) {
+            if (s->entries[i].inv_norm && !s->entries[i].reference) group->meaning_count++;
+        }
+    }
+    return VECDB_OK;
+}
+
 void malmoi_search_close(MalmoiSearch *s) {
     if (s) {
         size_t i;
@@ -100,6 +160,10 @@ int malmoi_search_open(MalmoiSearch **out, const VecDB *db, const MalmoiEncoder 
         int rc;
         (void)vecdb_sense(db,(uint32_t)i,&sense);
         rc=malmoi_grams(sense.definition,&s->documents[i]);
+        if (rc) {malmoi_search_close(s);return rc;}
+    }
+        {
+        int rc=attach_definitions(s);
         if (rc) {malmoi_search_close(s);return rc;}
     }
     *out=s; return VECDB_OK;
@@ -227,7 +291,83 @@ int malmoi_word_similarity(const MalmoiSearch *s,const char *a,const char *b,flo
     if (best< -1) return VECDB_ZERO_VECTOR;
     *score=best; return VECDB_OK;
 }
+/* 비교에 쓸 뜻인가? 벡터가 있어야 하고, 단어에 의미 뜻이 있으면 참조형은 빼요.
+ * 의미 뜻이 하나도 없는 단어(방언만 있는 단어 등)는 모든 뜻을 써요. */
+static int usable(const Group *group, const Entry *e) {
+    if (!e->inv_norm) return 0;
+    return group->meaning_count == 0 || !e->reference;
+}
 
+/* 두 단어의 뜻 기준 유사도. 똑같은 뜻풀이를 가진 뜻 짝은 건너뛰고 최댓값을 구해요.
+ * 비교할 짝이 하나도 없으면 -2를 돌려줘요. */
+static float meaning_pair_score(const MalmoiSearch *s, const Group *a, const Group *b) {
+    size_t i, j;
+    float best = -2;
+    for (i = a->start; i < a->start + a->count; ++i) {
+        const Entry *x = &s->entries[i];
+        if (!usable(a, x)) continue;
+        for (j = b->start; j < b->start + b->count; ++j) {
+            const Entry *y = &s->entries[j];
+            float v;
+            if (!usable(b, y)) continue;
+            if (x->definition && y->definition && !strcmp(x->definition, y->definition)) continue;
+            v = cosine(x->vector, x->inv_norm, y, s->dimension);
+            if (v > best) best = v;
+        }
+    }
+    return best;
+}
+
+int malmoi_word_similarity_meaning(const MalmoiSearch *s, const char *a, const char *b, float *score) {
+    size_t ga, gb;
+    int rc;
+    float best;
+    if (!score) return VECDB_ARGUMENT;
+    *score = 0;
+    if (!s) return VECDB_ARGUMENT;
+    rc = locate(s, a, &ga); if (rc) return rc;
+    rc = locate(s, b, &gb); if (rc) return rc;
+    if (ga == gb) return malmoi_word_similarity(s, a, b, score);
+    best = meaning_pair_score(s, &s->groups[ga], &s->groups[gb]);
+    /* 두 단어의 뜻이 전부 똑같은 뜻풀이뿐이면 정말 같은 뜻이니 기존 값을 써요. */
+    if (best < -1) return malmoi_word_similarity(s, a, b, score);
+    *score = best;
+    return VECDB_OK;
+}
+
+int malmoi_similar_words_meaning(const MalmoiSearch *s, const char *word,
+                                 MalmoiResult *out, size_t k, size_t *count) {
+    size_t source, g;
+    int rc;
+    if (!count) return VECDB_ARGUMENT;
+    *count = 0;
+    if (!s || (k && !out)) return VECDB_ARGUMENT;
+    rc = locate(s, word, &source); if (rc) return rc;
+    if (!s->groups[source].meaning_count) {
+        size_t i;
+        int nonzero = 0;
+        for (i = s->groups[source].start; i < s->groups[source].start + s->groups[source].count; ++i)
+            if (s->entries[i].inv_norm) nonzero = 1;
+        if (!nonzero) return VECDB_ZERO_VECTOR;
+    }
+    if (!k) return VECDB_OK;
+    for (g = 0; g < s->ng; ++g) {
+        float score;
+        const Entry *first;
+        MalmoiResult value;
+        /* 힌트에는 의미 뜻이 있는 단어만 내보내요 (방언만 있는 단어, 작품 제목 등 제외) */
+        if (g == source || !s->groups[g].meaning_count) continue;
+        score = meaning_pair_score(s, &s->groups[source], &s->groups[g]);
+        if (score < -1) continue;
+        first = &s->entries[s->groups[g].start];
+        value.word_id = first->word.id;
+        value.word = first->word.word;
+        value.key = first->word.key;
+        value.score = score;
+        insert(out, k, count, value);
+    }
+    return VECDB_OK;
+}
 int malmoi_search_definitions(const MalmoiSearch *s,const char *text,MalmoiResult *out,size_t k,size_t *count) {
     MalmoiGrams query;
     float *scores;

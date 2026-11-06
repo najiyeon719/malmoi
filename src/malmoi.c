@@ -66,7 +66,7 @@ static char *default_database_path(void) {
     {
         char *backslash=strrchr(executable,'\\');
         if (backslash && (!slash || backslash>slash)) slash=backslash;
-    }
+    }                    
 #endif
     if (slash && (size_t)(slash-executable)+sizeof("/data/dictionary.mlm")<sizeof(executable)) {
         strcpy(slash,"/data/dictionary.mlm");
@@ -149,6 +149,12 @@ int malmoi_similar(const Malmoi *m,const char *word,MalmoiResult *out,size_t k,s
 }
 int malmoi_similarity(const Malmoi *m,const char *a,const char *b,float *score) {
     return malmoi_word_similarity(m ? m->search : NULL,a,b,score);
+}
+int malmoi_similar_meaning(const Malmoi *m,const char *word,MalmoiResult *out,size_t k,size_t *count) {
+    return malmoi_similar_words_meaning(m ? m->search : NULL,word,out,k,count);
+}
+int malmoi_similarity_meaning(const Malmoi *m,const char *a,const char *b,float *score) {
+    return malmoi_word_similarity_meaning(m ? m->search : NULL,a,b,score);
 }
 const char *malmoi_error_string(int status) {
     return status==MALMOI_CONFIG ? "invalid encoder configuration" : vecdb_status_string(status);

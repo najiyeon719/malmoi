@@ -11,5 +11,5 @@ int game_similarity(
         return MALMOI_ARGUMENT;
     }
 
-    return malmoi_similarity(engine, answer, guess, score);
+    return malmoi_similarity_meaning(engine, answer, guess, score);
 }

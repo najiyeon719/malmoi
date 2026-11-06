@@ -54,6 +54,13 @@ MALMOI_API int malmoi_similar(const Malmoi *engine,const char *word,
                              MalmoiResult *out,size_t k,size_t *count);
 /* Two existing words -> max sense-pair cosine. Unknown words are errors. */
 MALMOI_API int malmoi_similarity(const Malmoi *engine,const char *a,const char *b,float *score);
+/* 뜻 기준 유사도 (게임용). 다른 단어를 가리키기만 하는 뜻(방언, 옛말, 북한어)과
+ * 작품 제목 뜻은 그 단어에 다른 뜻이 있으면 빼고, 뜻풀이가 똑같은 뜻 짝도 빼고 비교해요.
+ * 그래서 '비'와 '감'처럼 같은 방언 뜻 하나 때문에 1이 되는 일이 없어요.
+ * 사용법과 오류 규칙은 malmoi_similar, malmoi_similarity와 같아요. */
+MALMOI_API int malmoi_similar_meaning(const Malmoi *engine,const char *word,
+                                     MalmoiResult *out,size_t k,size_t *count);
+MALMOI_API int malmoi_similarity_meaning(const Malmoi *engine,const char *a,const char *b,float *score);
 MALMOI_API const char *malmoi_error_string(int status);
 
 #ifdef __cplusplus

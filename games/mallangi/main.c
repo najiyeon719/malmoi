@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,7 +43,7 @@ int main(void){
     MalmoiResult hints[HINT_POOL_SIZE];
     size_t hintCount = 0;
 
-    status = malmoi_similar(
+    status = malmoi_similar_meaning(
         engine,
         game.answer,
         hints,

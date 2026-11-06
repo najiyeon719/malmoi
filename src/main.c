@@ -81,7 +81,7 @@ static void run_game(const Malmoi *engine) {
         fputs("정답 단어가 너무 깁니다.\n", stderr);
         return;
     }
-    status = malmoi_similar(engine, answer, hints, HINT_POOL_SIZE, &hint_count);
+    status = malmoi_similar_meaning(engine, answer, hints, HINT_POOL_SIZE, &hint_count);
     if (status != MALMOI_OK || hint_count < CARD_COUNT) {
         fprintf(stderr, "게임 준비 실패: %s (후보 %zu개)\n",
                 malmoi_error_string(status), hint_count);

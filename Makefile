@@ -80,3 +80,13 @@ ring-fixture:
 bridge: $(BUILD_DIR)/bridge_cli$(EXEEXT)
 bridge-test: ring-fixture $(BUILD_DIR)/test_bridge$(EXEEXT)
 	MALMOI_DATA=build/fixtures/ring.mlm $(BUILD_DIR)/test_bridge$(EXEEXT)
+
+
+$(BUILD_DIR)/test_meaning$(EXEEXT): tests/test_meaning.c $(BUILD_DIR)/libmalmoi.a
+	$(CC) $(CPPFLAGS) $(CFLAGS) $< $(BUILD_DIR)/libmalmoi.a $(LDFLAGS) $(LDLIBS) -o $@
+
+.PHONY: meaning-fixture meaning-test
+meaning-fixture:
+	$(PYTHON3) tools/make_meaning_fixture.py --output build/fixtures/meaning.mlm
+meaning-test: meaning-fixture $(BUILD_DIR)/test_meaning$(EXEEXT)
+	MALMOI_DATA=build/fixtures/meaning.mlm $(BUILD_DIR)/test_meaning$(EXEEXT)
